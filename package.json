@@ -25,7 +25,8 @@
     "url": "https://github.com/notatestuser/gift.git"
   },
   "dependencies": {
-    "underscore": "1.x.x"
+    "underscore": "1.x.x",
+    "when": "~3.5.0"
   },
   "devDependencies": {
     "should": "~4.0.4",

@@ -1,5 +1,6 @@
 {exec} = require 'child_process'
 Repo   = require './repo'
+whn   = require 'when'
 
 # Public: Create a Repo from the given path.
 #
@@ -14,16 +15,19 @@ module.exports = Git = (path, bare=false) ->
 # bare     - Create a bare repository when true.
 # callback - Receives `(err, repo)`.
 #
-Git.init = (path, bare, callback) ->
-  [bare, callback] = [callback, bare] if !callback
+Git.init = (path, bare) ->
   if bare
     bash = "git init --bare ."
   else
     bash = "git init ."
+  dfrd = whn.defer()
   exec bash, {cwd: path}
   , (err, stdout, stderr) ->
-    return callback err if err
-    return callback err, (new Repo path, bare)
+    if (err)
+      dfrd.reject(err)
+    else
+      dfrd.resolve(new Repo path, bare)
+  return dfrd.promise
 
 # Public: Clone a git repository.
 #
@@ -33,6 +37,10 @@ Git.init = (path, bare, callback) ->
 #
 Git.clone = (repository, path, callback) ->
   bash = "git clone #{repository} #{path}"
+  dfrd = whn.defer()
   exec bash, (err, stdout, stderr) ->
-    return callback err if err
-    return callback err, (new Repo path)
+    if (err)
+      dfrd.reject(err)
+    else
+      dfrd.resolve(new Repo path)
+  return dfrd.promise

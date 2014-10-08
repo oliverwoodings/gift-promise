@@ -12,10 +12,8 @@ module.exports = class Blob
   # node's exec(). If you need to get bigger files, you should use dataStream() to
   # get a stream for the file's data
   #
-  data: (callback) ->
-    @repo.git "cat-file", {p: true}, @id
-    , (err, stdout, stderr) ->
-      return callback err, stdout
+  data: () ->
+    return @repo.git "cat-file", {p: true}, @id
 
   # Public: Get the blob contents as a stream
   #

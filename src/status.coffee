@@ -3,11 +3,12 @@
 # repo     - A Repo.
 # callback - Receives `(err, status)`
 #
-module.exports = S = (repo, callback) ->
-  repo.git "status --porcelain", (err, stdout, stderr) ->
-    status = new Status repo
-    status.parse stdout
-    return callback err, status
+module.exports = S = (repo) ->
+  return repo.git "status --porcelain"
+    .then (stdout) ->
+      status = new Status repo
+      status.parse stdout
+      return status
 
 S.Status = class Status
   constructor: (@repo) ->

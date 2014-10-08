@@ -1,6 +1,7 @@
 _     = require 'underscore'
 Actor = require './actor'
 Tree  = require './tree'
+whn  = require 'when'
 
 module.exports = class Commit
   constructor: (@repo, @id, parents, tree, @author, @authored_date, @committer, @committed_date, @gpgsig, @message) ->
@@ -25,34 +26,22 @@ module.exports = class Commit
   #
   # callback - Receives `(err, commits)`
   #
-  @find_all: (repo, ref, options, callback) ->
+  @find_all: (repo, ref, options) ->
     options = _.extend {pretty: "raw"}, options
-    repo.git "rev-list", options, ref
-    , (err, stdout, stderr) =>
-      return callback err if err
-      return callback null, @parse_commits(repo, stdout)
+    return repo.git "rev-list", options, ref
+      .then (stdout) ->
+        return Commit.parse_commits repo, stdout
 
 
-  @find: (repo, id, callback) ->
+  @find: (repo, id) ->
     options = {pretty: "raw", "max-count": 1}
-    repo.git "rev-list", options, id
-    , (err, stdout, stderr) =>
-      return callback err if err
-      return callback null, @parse_commits(repo, stdout)[0]
+    return repo.git "rev-list", options, id
+      .then (stdout) ->
+        return Commit.parse_commits(repo, stdout)[0]
 
 
   @find_commits: (repo, ids, callback) ->
-    commits = []
-    next = (i) ->
-      if id = ids[i]
-        Commit.find repo, id, (err, commit) ->
-          return callback err if err
-          commits.push commit
-          next i + 1
-      # Done: all commits loaded.
-      else
-        callback null, commits
-    next 0
+    return whn.map ids, Commit.find.bind Commit, repo
 
 
   # Internal: Parse the commits from `git rev-list`

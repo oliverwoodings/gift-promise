@@ -1,8 +1,9 @@
-module.exports = C = (repo, callback) ->
-  repo.git "config", {list: true}, (err, stdout, stderr) ->
-    config = new Config repo
-    config.parse stdout
-    callback err, config
+module.exports = C = (repo) ->
+  return repo.git "config", {list: true}
+    .then (stdout) ->
+      config = new Config repo
+      config.parse stdout
+      return config
 
 C.Config = class Config
   constructor: (@repo) ->

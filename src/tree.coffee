@@ -1,4 +1,5 @@
 _         = require 'underscore'
+whn       = require 'when'
 Blob      = require './blob'
 Submodule = require './submodule'
 
@@ -18,37 +19,36 @@ module.exports = class Tree
   # callback - Receives `(err, children)`, where children is a list
   #            of Trees, Blobs, and Submodules.
   #
-  contents: (callback) ->
-    return callback null, @_contents if @_contents
-    @repo.git "ls-tree", {}, @id
-    , (err, stdout, stderr) =>
-      return callback err if err
-      @_contents = []
-      for line in stdout.split("\n")
-        @_contents.push @content_from_string(line) if line
-      return callback null, @_contents
+  contents: () ->
+    return whn.promise @_contents if @_contents
+    return @repo.git "ls-tree", {}, @id
+      .then (stdout) =>
+        @_contents = []
+        for line in stdout.split("\n")
+          @_contents.push @content_from_string(line) if line
+        return @_contents
 
 
   # Public: Get the child blobs.
   #
   # callback - Receives `(err, blobs)`.
   #
-  blobs: (callback) ->
-    @contents (err, children) ->
-      return callback err if err
-      return callback null, _.filter children, (child) ->
-        child instanceof Blob
+  blobs: () ->
+    return @contents()
+      .then (children) ->
+        return _.filter children, (child) ->
+          child instanceof Blob
 
 
   # Public: Get the child blobs.
   #
   # callback - Receives `(err, trees)`.
   #
-  trees: (callback) ->
-    @contents (err, children) ->
-      return callback err if err
-      return callback null, _.filter children, (child) ->
-        child instanceof Tree
+  trees: () ->
+    return @contents()
+      .then (children) ->
+        return _.filter children, (child) ->
+          child instanceof Tree
 
 
   # Public: Find the named object in this tree's contents.
@@ -56,20 +56,19 @@ module.exports = class Tree
   # callback - Receives `(err, obj)` where obj is Tree, Blob, or null
   #            if not found.
   #
-  find: (file, callback) ->
+  find: (file) ->
     if /\//.test file
       [dir, rest] = file.split "/", 2
-      @trees (err, _trees) =>
-        for tree in _trees
-          return tree.find rest, callback if tree.name == dir
-        return callback null, null
+      return @trees()
+        .then (_trees) =>
+          for tree in _trees
+            return tree.find rest if tree.name == dir
     else
-      @contents (err, children) ->
-        return callback err if err
-        for child in children
-          if child.name == file
-            return callback null, child
-        return callback null, null
+      return @contents()
+        .then (children) ->
+          for child in children
+            if child.name == file
+              return child
 
 
   # Internal: Parse a Blob or Tree from the line.

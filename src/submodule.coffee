@@ -7,12 +7,12 @@ module.exports = class Submodule
   # treeish  - String treeish to look up the url within.
   # callback - Receives `(err, url)`.
   #
-  url: (treeish, callback) ->
-    [treeish, callback] = [callback, treeish] if !callback
+  url: (treeish) ->
     treeish            ?= "master"
 
-    Submodule.config @repo, treeish, (err, config) =>
-      return callback err, config?[@name].url
+    return Submodule.config @repo, treeish
+      .then (config) =>
+        return config?[@name].url
 
 
   # Internal: Parse the `.gitmodules` file.
@@ -38,12 +38,11 @@ module.exports = class Submodule
   #     }
   #   }
   #
-  @config: (repo, treeish, callback) ->
-    repo.tree(treeish).find ".gitmodules", (err, blob) ->
-      return callback err if err
-      blob.data (err, data) ->
-        return callback err if err
-
+  @config: (repo, treeish) ->
+    return repo.tree(treeish).find ".gitmodules"
+      .then (blob) ->
+        return blob.data()
+      .then (data) ->
         conf    = {}
         lines   = data.split "\n"
         current = null
@@ -56,4 +55,4 @@ module.exports = class Submodule
           else if match = /^\s+([^\s]+)\s+[=]\s+(.+)$/.exec line
             conf[current][match[1]] = match[2]
 
-        return callback null, conf
+        return conf

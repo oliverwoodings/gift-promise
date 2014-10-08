@@ -1,5 +1,6 @@
 fs     = require 'fs'
 Commit = require './commit'
+whn    = require 'when'
 
 exports.Ref = class Ref
   constructor: (@name, @commit) ->
@@ -14,39 +15,40 @@ exports.Ref = class Ref
   # options - (optional).
   #
   # Returns Array of Ref.
-  @find_all: (repo, type, RefClass, callback) ->
-    repo.git.refs type, {}, (err, text) ->
-      return callback err if err
-      names = []
-      ids   = []
-      for ref in text.split("\n")
-        continue if !ref
-        [name, id] = ref.split(' ')
-        names.push name
-        ids.push id
+  @find_all: (repo, type, RefClass) ->
+    return repo.git.refs type, {}
+      .then (text) ->
+        names = []
+        ids   = []
+        for ref in text.split("\n")
+          continue if !ref
+          [name, id] = ref.split(' ')
+          names.push name
+          ids.push id
 
-      Commit.find_commits repo, ids, (err, commits) ->
-        return callback err if err
-        refs = []
-        for name, i in names
-          refs.push new RefClass name, commits[i]
-        return callback null, refs
+        return Commit.find_commits repo, ids
+          .then (commits) ->
+            refs = []
+            for name, i in names
+              refs.push new RefClass name, commits[i]
+            return refs
 
 
 exports.Head = class Head extends Ref
-  @find_all: (repo, callback) ->
-    Ref.find_all repo, "head", Head, callback
+  @find_all: (repo) ->
+    return Ref.find_all repo, "head", Head
 
-  @current: (repo, callback) ->
+  @current: (repo) ->
+    dfrd = whn.defer()
     fs.readFile "#{repo.dot_git}/HEAD", (err, data) ->
-      return callback err if err
+      return dfrd.reject err if err
 
       ref = /ref: refs\/heads\/([^\s]+)/.exec data
       # When the current branch check out to a commit, instaed of a branch name.
-      return callback new Error "Current branch is not a valid branch." if !ref
+      return dfrd.reject new Error "Current branch is not a valid branch." if !ref
 
       [m, branch] = ref
       fs.readFile "#{repo.dot_git}/refs/heads/#{branch}", (err, id) ->
-        Commit.find repo, id, (err, commit) ->
-          return callback err if err
-          return callback null, (new Head branch, commit)
+        Commit.find repo, id
+          .then (commit) ->
+            dfrd.resolve new Head branch, commit

@@ -1,4 +1,5 @@
 _      = require 'underscore'
+whn    = require 'when'
 cmd    = require './git'
 Actor  = require './actor'
 Commit = require './commit'
@@ -23,18 +24,16 @@ module.exports = class Repo
   #
   # callback - Receives `(err, actor)`, where `actor` is an Actor.
   #
-  identity: (callback) ->
+  identity: () ->
     # git config user.email
     @git "config", {}, ["user.email"]
-    , (err, stdout = '') =>
-      return callback err if err
-      email = stdout?.trim()
-      # git config user.name
-      @git "config", {}, ["user.name"]
-      , (err, stdout = '') =>
-        return callback err if err
-        name = stdout?.trim()
-        return callback null, new Actor(name, email)
+      .then (stdout = '') =>
+        email = stdout?.trim()
+        # git config user.name
+        return @git "config", {}, ["user.name"]
+          .then (stdout = '') =>
+            name = stdout?.trim()
+            return new Actor name, email
 
 
   # Public: Set your account's default identity for commits.
@@ -42,14 +41,10 @@ module.exports = class Repo
   # actor    - An instance of Actor.
   # callback - Receives `(err)`.
   #
-  identify: (actor, callback) ->
+  identify: (actor) ->
     # git config user.email "you@example.com"
-    @git "config", {}, ["user.email", "\"#{actor.email}\""], (err) =>
-      return callback err if err
-      # git config user.name "Your Name"
-      @git "config", {}, ["user.name", "\"#{actor.name}\""], (err) =>
-        return callback err if err
-        return callback null
+    return whn.join @git("config", {}, ["user.email", "\"#{actor.email}\""])
+    , @git("config", {}, ["user.name", "\"#{actor.name}\""])
 
 
   # Public: Get a list of commits.
@@ -77,11 +72,7 @@ module.exports = class Repo
   #   # Do not limit commits amount
   #   repo.commits "master", -1, (err, commits) ->
   #
-  commits: (start, limit, skip, callback) ->
-    [skip,  callback] = [callback, skip]  if !callback
-    [limit, callback] = [callback, limit] if !callback
-    [start, callback] = [callback, start] if !callback
-    throw new Error "a callback is required" if !callback
+  commits: (start, limit, skip) ->
     start ?= "master"
     limit ?= 10
     skip  ?= 0
@@ -90,28 +81,26 @@ module.exports = class Repo
     if limit != -1
       options["max-count"] = limit
 
-    Commit.find_all this, start, options, callback
+    return Commit.find_all this, start, options
 
 
   # Internal: Returns current commit id
   #
   # callback - Receives `(err, id)`.
   #
-  current_commit_id: (callback) ->
-    @git "rev-parse HEAD", {}, []
-    , (err, stdout, stderr) =>
-      return callback err if err
-      return callback null, _.first stdout.split "\n"
+  current_commit_id: () ->
+    return @git "rev-parse HEAD", {}, []
+      .then (stdout) ->
+        return _.first stdout.split "\n"
 
 
   # Public:
   #
   # callback - Receives `(err, commit)`
   #
-  current_commit: (callback) ->
-    @current_commit_id (err, commit_id) =>
-      return callback err if err
-      Commit.find this, commit_id, callback
+  current_commit: () ->
+    return @current_commit_id()
+      .then Commit.find.bind(Commit, this)
 
 
   # Public: The tree object for the treeish or master.
@@ -141,40 +130,37 @@ module.exports = class Repo
   diff: (commitA, commitB) ->
     [paths, options] = [[], {}]
     if arguments.length is 3
-      callback = arguments[2]
-    else if arguments.length is 4
-      callback = arguments[3]
       if arguments[2] instanceof Array
         paths = arguments[2]
       else if arguments[2] instanceof Object
         options = arguments[2]
-    else if arguments.length is 5
-      [paths, options, callback] = Array.prototype.slice.call(arguments, 2)
+    else if arguments.length is 4
+      paths = arguments[2]
+      options = arguments[3]
 
     commitA = commitA.id if _.isObject(commitA)
     commitB = commitB.id if _.isObject(commitB)
-    @git "diff", options, _.flatten([commitA, commitB, "--", paths])
-    , (err, stdout, stderr) =>
-      return callback err if err
-      if _.has(options, 'raw')
-        return callback err, Diff.parse_raw(this, stdout)
-      else
-        return callback err, Diff.parse(this, stdout)
+    return @git "diff", options, _.flatten([commitA, commitB, "--", paths])
+      .then (stdout) ->
+        if _.has(options, 'raw')
+          return Diff.parse_raw(this, stdout)
+        else
+          return Diff.parse(this, stdout)
 
 
   # Public: Get the repository's remotes.
   #
   # callback - Receives `(err, remotes)`.
   #
-  remotes: (callback) ->
-    Ref.find_all this, "remote", Ref, callback
+  remotes: () ->
+    return Ref.find_all this, "remote", Ref
 
   # Public: List the repository's remotes.
   #
   # callback - Receives `(err, names)`.
   #
-  remote_list: (callback) ->
-    @git.list_remotes callback
+  remote_list: () ->
+    return @git.list_remotes()
 
   # Public: Add a remote.
   #
@@ -182,30 +168,24 @@ module.exports = class Repo
   # url      - String url of the remote.
   # callback - Receives `(err)`
   #
-  remote_add: (name, url, callback) ->
-    @git "remote", {}, ["add", name, url]
-    , (err, stdout, stderr) ->
-      callback err
+  remote_add: (name, url) ->
+    return @git "remote", {}, ["add", name, url]
 
   # Public: Remove a remote.
   #
   # name     - String name of the remote.
   # callback - Receives `(err)`
   #
-  remote_remove: (name, callback) ->
-    @git "remote", {}, ["rm", name]
-    , (err, stdout, stderr) ->
-      callback err
+  remote_remove: (name) ->
+    return @git "remote", {}, ["rm", name]
 
   # Public: `git fetch <name>`.
   #
   # name     - String name of the remote
   # callback - Receives `(err)`.
   #
-  remote_fetch: (name, callback) ->
-    @git "fetch", {}, name
-    , (err, stdout, stderr) ->
-      callback err
+  remote_fetch: (name) ->
+    return @git "fetch", {}, name
 
   # Public: `git push <name>`.
   #
@@ -213,33 +193,28 @@ module.exports = class Repo
   # branch   - (optional) Branch to push
   # callback - Receives `(err)`.
   #
-  remote_push: (name, branch, callback) ->
-    if !callback
-      callback = branch
+  remote_push: (name, branch) ->
+    if !branch
       args = name
     else
       args = [name, branch]
 
-    @git "push", {}, args
-    , (err, stdout, stderr) ->
-      callback err
+    return @git "push", {}, args
 
   # Public: `git merge <name>`.
   #
   # name     - String name of the source
   # callback - Receives `(err)`.
   #
-  merge: (name, callback) ->
-    @git "merge", {}, name
-    , (err, stdout, stderr) ->
-      callback err
+  merge: (name) ->
+    return @git "merge", {}, name
 
   # Public: Get the repository's status (`git status`).
   #
   # callback - Receives `(err, status)`
   #
-  status: (callback) ->
-    return Status(this, callback)
+  status: () ->
+    return Status this
 
   # Public: Show information about files in the index and the
   #         working tree.
@@ -248,24 +223,22 @@ module.exports = class Repo
   #            `git ls-files` (optional).
   # callback - Receives `(err,stdout)`.
   #
-  ls_files: (options, callback) ->
-    [options, callback] = [callback, options] if !callback
-    @git "ls-files", options
-    , (err, stdout, stderr) =>
-      return callback err if err
-      return callback null, @parse_lsFiles stdout,options
+  ls_files: (options) ->
+    return @git "ls-files", options
+      .then (stdout) =>
+        return @parse_lsFiles stdout,options
 
 
-  config: (callback) ->
-    return Config(this, callback)
+  config: () ->
+    return Config this
 
 
   # Public: Get the repository's tags.
   #
   # callback - Receives `(err, tags)`.
   #
-  tags: (callback) ->
-    Tag.find_all this, callback
+  tags: () ->
+    return Tag.find_all this
 
   # Public: Create a tag.
   #
@@ -274,64 +247,60 @@ module.exports = class Repo
   #            `git tag` (optional).
   # callback - Receives `(err)`.
   #
-  create_tag: (name, options, callback) ->
-    [options, callback] = [callback, options] if !callback
-    @git "tag", options, [name], callback
+  create_tag: (name, options) ->
+    return @git "tag", options, [name]
 
   # Public: Delete the tag.
   #
   # name     - String
   # callback - Receives `(err)`.
   #
-  delete_tag: (name, callback) ->
-    @git "tag", {d: name}, callback
+  delete_tag: (name) ->
+    return @git "tag", {d: name}
 
 
   # Public: Get a list of branches.
   #
   # callback - Receives `(err, heads)`.
   #
-  branches: (callback) ->
-    Head.find_all this, callback
+  branches: () ->
+    return Head.find_all this
 
   # Public: Create a branch with the given name.
   #
   # name     - String name of the new branch.
   # callback - Receives `(err)`.
   #
-  create_branch: (name, callback) ->
-    @git "branch", {}, name, (err, stdout, stderr) ->
-      return callback err
+  create_branch: (name) ->
+    return @git "branch", {}, name
 
   # Public: Delete the branch with the given name.
   #
   # name     - String name of the branch to delete.
   # callback - Receives `(err)`.
   #
-  delete_branch: (name, callback) ->
-    @git "branch", {d: true}, name, (err, stdout, stderr) ->
-      return callback err
+  delete_branch: (name) ->
+    return @git "branch", {d: true}, name
 
   # Public: Get the Branch with the given name.
   #
   # name     - String (optional). By default, get the current branch.
   # callback - Receives `(err, head)`
   #
-  branch: (name, callback) ->
-    [name, callback] = [callback, name] if !callback
+  branch: (name) ->
     if !name
-      Head.current this, callback
+      return Head.current this
     else
-      @branches (err, heads) ->
-        return callback err if err
-        for head in heads
-          return callback null, head if head.name == name
-        return callback new Error "No branch named '#{name}' found"
+      return @branches()
+        .then (heads) ->
+          for head in heads
+            return head if head.name == name
+          throw new Error "No branch named '#{name}' found"
 
 
   # Public: Checkout the treeish.
-  checkout: (treeish, callback) ->
-    @git "checkout", {}, treeish, callback
+  checkout: (treeish) ->
+    return @git "checkout", {}, treeish
 
   # Public: Reset the git repo.
   #
@@ -344,14 +313,12 @@ module.exports = class Repo
   #   :keep  - {Boolean)
   # callback - The {Function} to callback.
   #
-  reset: (treeish, options, callback) ->
-    [options, callback] = [callback, options] if !callback
-    [treeish, callback] = [callback, treeish] if !callback
+  reset: (treeish, options) ->
     [treeish, options]  = [options, treeish]  if typeof treeish is 'object'
     treeish ?= 'HEAD'
     options ?= {}
 
-    @git "reset", options, treeish, callback
+    return @git "reset", options, treeish
 
   # Public: Checkout file(s) to the index
   #
@@ -361,14 +328,12 @@ module.exports = class Repo
   #            "force" - Boolean
   # callback - Receives `(err)`.
   #
-  checkoutFile: (files, options, callback) ->
-    [options, callback] = [callback, options] if !callback
-    [files, callback]   = [callback, files]   if !callback
+  checkoutFile: (files, options) ->
     [files, options]    = [options, files]    if typeof files is 'object'
     options ?= {}
     files ?= '.'
     files = [files] if _.isString files
-    @git "checkout", options, _.flatten(['--', files]), callback
+    return @git "checkout", options, _.flatten(['--', files])
 
   # Public: Commit some code.
   #
@@ -379,13 +344,12 @@ module.exports = class Repo
   #            "author"- String formated like: A U Thor <author@example.com>
   # callback - Receives `(err)`.
   #
-  commit: (message, options, callback) ->
-    [options, callback] = [callback, options] if !callback
+  commit: (message, options) ->
     options ?= {}
     options = _.extend options, {m: "\"#{message}\""}
     # add quotes around author
     options.author = "\"#{options.author}\"" if options.author?
-    @git "commit", options, callback
+    return @git "commit", options
 
   # Public: Add files to the index.
   #
@@ -394,11 +358,10 @@ module.exports = class Repo
   #            "all"   - Boolean
   # callback - Receives `(err)`.
   #
-  add: (files, options, callback) ->
-    [options, callback] = [callback, options] if !callback
+  add: (files, options) ->
     options ?= {}
     files = [files] if _.isString files
-    @git "add", options, files, callback
+    return @git "add", options, files
 
   # Public: Remove files from the index.
   #
@@ -407,15 +370,14 @@ module.exports = class Repo
   #            "recursive" - Boolean
   # callback - Receives `(err)`.
   #
-  remove: (files, options, callback) ->
-    [options, callback] = [callback, options] if !callback
+  remove: (files, options) ->
     options ?= {}
     files = [files] if _.isString files
-    @git "rm", options, files, callback
+    return @git "rm", options, files
 
   # Public: Revert the given commit.
-  revert: (sha, callback) ->
-    @git "revert", {}, sha, callback
+  revert: (sha) ->
+    return @git "revert", {}, sha
 
 
   # Public: Sync the current branch with the remote.
@@ -426,27 +388,23 @@ module.exports = class Repo
   # branch_name - String.
   # callback - Receives `(stderr)`.
   #
-  sync: (remote_name, branch_name, callback) ->
+  sync: (remote_name, branch_name) ->
 
     # handle 'curried' arguments
-    [remote, branch] = [remote_name, branch_name]                     if typeof callback    is "function"
-    [remote, branch, callback] = ["origin", remote_name, branch_name] if typeof branch_name is "function"
-    [remote, branch, callback] = ["origin", "master", remote_name]    if typeof remote_name is "function"
-
-    @status (err, status) =>
-      return callback err if err
-      @git "stash", {}, ["save", "-u"], (err, stdout, stderr) =>
-        return callback stderr if err
-        @git "pull", {}, [remote, branch], (err, stdout, stderr) =>
-          return callback stderr if err
-          @git "push", {}, [remote, branch], (err, stdout, stderr) =>
-            return callback stderr if err
-            if not status?.clean
-              @git "stash", {}, ["pop"], (err, stdout, stderr) =>
-                return callback stderr if err
-                return callback null
-            else
-              return callback null
+    [remote, branch] = [remote_name, branch_name]
+    [remote, branch] = ["origin", remote_name] if !branch_name
+    [remote, branch] = ["origin", "master"]    if !remote_name
+    status = null
+    return @status()
+      .then (sts) =>
+        status = sts
+        return @git "stash", {}, ["save", "-u"]
+      .then () =>
+        return @git "pull", {}, [remote, branch]
+      .then () =>
+        return @git "push", {}, [remote, branc4h]
+      .then () =>
+        return @git "stash", {}, ["pop"] if not status?.clean
 
   # Public: Pull the remotes from the master.
   #
@@ -456,18 +414,16 @@ module.exports = class Repo
   # branch_name - String.
   # callback - Receives `(stderr)`.
   #
-  pull: (remote_name, branch_name, callback) ->
+  pull: (remote_name, branch_name) ->
 
     # handle 'curried' arguments
-    [remote, branch] = [remote_name, branch_name]                     if typeof callback    is "function"
-    [remote, branch, callback] = ["origin", remote_name, branch_name] if typeof branch_name is "function"
-    [remote, branch, callback] = ["origin", "master", remote_name]    if typeof remote_name is "function"
+    [remote, branch] = [remote_name, branch_name]
+    [remote, branch] = ["origin", remote_name] if !branch_name
+    [remote, branch] = ["origin", "master"]    if !remote_name
 
-    @status (err, status) =>
-      return callback err if err
-      @git "pull", {}, [remote, branch], (err, stdout, stderr) =>
-        return callback stderr if err
-        return callback null
+    return @status()
+      .then (status) =>
+        return @git "pull", {}, [remote, branch]
 
   # Internal: Parse the list of files from `git ls-files`
   #
