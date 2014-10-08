@@ -13,7 +13,9 @@ module.exports = Git = (git_dir, dot_git) ->
     args     = args.join " " if args instanceof Array
     bash     = "#{Git.bin} #{command} #{options} #{args}"
     dfrd     = whn.defer()
-    exec bash, {cwd: git_dir, encoding:'binary'}, dfrd.resolve
+    exec bash, {cwd: git_dir, encoding:'binary'}, (err, stdout, stderr) ->
+      return dfrd.reject err or stderr if err or stderr
+      dfrd.resolve stdout
     return dfrd.promise
 
   # Public: Passthrough for raw git commands

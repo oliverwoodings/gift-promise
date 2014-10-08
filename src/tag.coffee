@@ -37,7 +37,7 @@ module.exports = class Tag extends Ref
   lazy: () ->
     return whn.promise @_lazy_data if @_lazy_data
     return @repo.git "cat-file", {}, ["tag", @name]
-      .then (stdout, stderr) =>
+      .then (stdout) =>
         lines = stdout.split "\n"
         data  = {}
 
