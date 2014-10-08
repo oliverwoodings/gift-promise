@@ -206,8 +206,10 @@ module.exports = class Repo
   # name     - String name of the source
   # callback - Receives `(err)`.
   #
-  merge: (name) ->
-    return @git "merge", {}, name
+  merge: (name, squash) ->
+    args = [name]
+    args.unshift "--squash" if squash
+    return @git "merge", {}, args
 
   # Public: Get the repository's status (`git status`).
   #
@@ -303,7 +305,7 @@ module.exports = class Repo
 
   # Public: Checkout the treeish.
   checkout: (treeish) ->
-    return @git "checkout", {}, treeish
+    return @git "checkout", {q: true}, treeish
 
   # Public: Reset the git repo.
   #
@@ -349,7 +351,7 @@ module.exports = class Repo
   #
   commit: (message, options) ->
     options ?= {}
-    options = _.extend options, {m: "\"#{message}\""}
+    options = _.extend options, {m: "'#{message}'"}
     # add quotes around author
     options.author = "\"#{options.author}\"" if options.author?
     return @git "commit", options

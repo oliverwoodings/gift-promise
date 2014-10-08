@@ -14,7 +14,9 @@ module.exports = Git = (git_dir, dot_git) ->
     bash     = "#{Git.bin} #{command} #{options} #{args}"
     dfrd     = whn.defer()
     exec bash, {cwd: git_dir, encoding:'binary'}, (err, stdout, stderr) ->
-      return dfrd.reject err or stderr if err or stderr
+      return dfrd.reject new Error(stderr) if stderr
+      return dfrd.reject new Error(stdout) if err and stdout
+      return dfrd.reject err if err
       dfrd.resolve stdout
     return dfrd.promise
 
@@ -68,10 +70,10 @@ module.exports = Git = (git_dir, dot_git) ->
           if name.substr(0, prefix.length) == prefix
             matches.push "#{name.substr(prefix.length)} #{id}"
         return matches.join("\n")
-      .else (err) ->
+      .catch (err) ->
         # ignore error code 1: means no match
-        err = null if err?.code is 1
-        return err
+        return null if err?.code is 1
+        throw err
 
   return git
 
